@@ -1,5 +1,6 @@
 from java.net import URL
-import requests
+##import requests
+import urllib2
 import os
 from burp import IBurpExtender
 from burp import ITab
@@ -25,7 +26,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
     def	registerExtenderCallbacks(self, callbacks):
 
         # set our extension name
-        callbacks.setExtensionName("Hello world extension")
+        callbacks.setExtensionName("CT Search")
         callbacks.registerContextMenuFactory(self)
         # obtain output stream
         self._stdout = PrintWriter(callbacks.getStdout(),True)
@@ -80,8 +81,9 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
         my_domain_list = []
         try:
             api_url = "https://crt.sh/?q=%.{}&output=json".format(domain)
-            data = requests.get(api_url)
-            json_list = json.loads(data.text)
+            request = urllib2.urlopen(api_url)
+            data = request.read()
+            json_list = json.loads(data)
             my_domain_list = self.get_domains_from_json_list(json_list)
         except Exception as e:
             print("error")
@@ -186,8 +188,6 @@ class CTSearchTab(ITab):
         self.domainTable = JTable(ResourceTableModel())
         self.domainTable.setRowHeight(30)
         columnModel = self.domainTable.getColumnModel()
-        columnModel.getColumn(0).setPreferredWidth(40)
-        columnModel.getColumn(1).setPreferredWidth(180)
 
         splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)
         topPane = JPanel()
