@@ -55,16 +55,16 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
         footerPanel = JPanel()
 
         footerPanel.add(JLabel("by mcgyver5 "))
-        self._chooseFileButton = JButton("OPEN Local FILE", actionPerformed=self.fileButtonClick)
+#        self._chooseFileButton = JButton("OPEN Local FILE", actionPerformed=self.fileButtonClick)
         self.infoPanel.add(JLabel("INFORMATION PANE"))
 
-        self.infoPanel.add(self._chooseFileButton)
+#        self.infoPanel.add(self._chooseFileButton)
         scrollpane = JScrollPane(self.fileTable)
         ## this is a split inside the top component
         topPane = JSplitPane(JSplitPane.VERTICAL_SPLIT)
         topPane.setTopComponent(self.infoPanel)
         topPane.setBottomComponent(scrollpane)
-        self._chooseFileButton.setEnabled(True)
+        #self._chooseFileButton.setEnabled(True)
         self._splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)
         self._splitpane.setTopComponent(topPane)
         self._splitpane.setBottomComponent(footerPanel)
@@ -109,60 +109,60 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
         self._callbacks.addSuiteTab(ct_tab)
         ct_tab.setDomainList(domain_list)
 
+    def fake_lookup_ct(self, whatever):
+        domain_list = self.get_domains_from_file()
+        ct_tab = CTSearchTab(self._callbacks)
+        self._callbacks.addSuiteTab(ct_tab)
+        ct_tab.setDomainList(domain_list)
 
     def createMenuItems(self, context_menu):
         self.context = context_menu
         menu_list = ArrayList()
         menu_list.add(JMenuItem("Lookup Domain in CT Logs", actionPerformed=self.lookup_ct))
-
+        menu_list.add(JMenuItem("CT LOgs Test get Domains from test file", actionPerformed=self.fake_lookup_ct))
         return menu_list
-    def get_domains_from_file(self,file_data):
-        json_list = json.loads(file_data)
+
+    def get_domains_from_file(self):
         my_domain_list = []
-        for cert in json_list:
-            try:
-                domainList = str(cert.get('name_value')).strip()
-                for domain in domainList.split("\n"):
-                    self._stdout.println(domain)
-                    if not domain in my_domain_list:
-                        my_domain_list.append(domain)
-            except Exception as e:
-                self._stdout.println(e)
-        my_domain_list.sort()
-
-        return my_domain_list
-
-    def populateTableModel(self,f):
-        domain_list = []
-        num = 0
-        try:
-            path = os.getcwd()
-            self._stdout.println("path is : " + path)
-            
-            fhandle = open(f) 
-            file_data = fhandle.read()
-            domain_list = self.get_domains_from_file(file_data)
-            tableModel = self.fileTable.getModel()
-        except Exception as e:
-            self._stdout.println("exception!  ")
-            self._stdout.println(e)
-        for dom in domain_list:
-            num = num + 1
-            row = [str(num),dom,False]
-            tableModel.addRow(row)
-
-    def fileButtonClick(self,callbacks):
-        fileTypeList = ["csv","txt","json"]
         fileChooser = JFileChooser()
         result = fileChooser.showOpenDialog(self._splitpane)
         if result == JFileChooser.APPROVE_OPTION:
             f = fileChooser.getSelectedFile()
             fileName = f.getPath()
             self._stdout.println(fileName)
+            file_data = open(fileName).read()
+            json_list = json.loads(file_data)
+            for cert in json_list:
+                try:
+                    domainList = str(cert.get('name_value')).strip()
+                    for domain in domainList.split("\n"):
+                        self._stdout.println(domain)
+                        if not domain in my_domain_list:
+                            my_domain_list.append(domain)
+                except Exception as e:
+                    self._stdout.println(e)
+            my_domain_list.sort()
 
-            self.populateTableModel(fileName)
+        return my_domain_list
 
-    ## Implement ITab:
+#    def populateTableModel(self,f):
+#        domain_list = []
+#        num = 0
+#        try:
+#            path = os.getcwd()
+#            self._stdout.println("path is : " + path)
+#            fhandle = open(f) 
+#            file_data = fhandle.read()
+#            domain_list = self.get_domains_from_file(file_data)
+#            tableModel = self.fileTable.getModel()
+#        except Exception as e:
+#            self._stdout.println("exception!  ")
+#            self._stdout.println(e)
+#        for dom in domain_list:
+#            num = num + 1
+#            row = [str(num),dom,False]
+#            tableModel.addRow(row)
+#
     def getTabCaption(self):
         return "Import URLs"
     
@@ -176,6 +176,7 @@ class CTSearchTab(ITab):
         self.callbacks = callbacks
         self._stdout = PrintWriter(callbacks.getStdout(),True)
         self._stdout.println("What are we doing in the object down here")
+
     # Implement ITab:
     def saveResults(self, e):
         self._stdout.println("Saving results") 
@@ -189,14 +190,17 @@ class CTSearchTab(ITab):
                 self._stdout.println("writing ") 
                 fileout.write("I AM FILE")
             fileout.close()
+
     def addToScope(self,whatever):
         self._stdout.println("add to scope called")
-        self._stdout.println(whatever)
-        for domain in self.domain_list:
-            domain = domain.replace("*.","")
-            url1 = URL("https://{}/".format(domain))
-            if not self.callbacks.isInScope(url1):            
-                self.callbacks.includeInScope(url1)
+        rowCount = self.domainTable.getRowCount()
+        for row in range(0,rowCount):
+            if self.domainTable.getValueAt(row,2) == True:
+                domain = self.domainTable.getValueAt(row,1)
+                domain = domain.replace("*.", "")
+                url1 = URL("https://{}/".format(domain))
+                if not self.callbacks.isInScope(url1):
+                    self.callbacks.includeInScoe(url1)
 
     def getTabCaption(self ):
         return "CT Search "
@@ -204,14 +208,15 @@ class CTSearchTab(ITab):
     def getUiComponent(self):
         self.domainTable = JTable(ResourceTableModel())
         self.domainTable.setRowHeight(30)
-        columnModel = self.domainTable.getColumnModel()
+        #Delete:
+        #jcolumnModel = self.domainTable.getColumnModel()
 
         splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)
         topPane = JPanel()
         image_label = HelpLabel(self.callbacks)
         image_label.setHelpIcon("nothing")
         image_label.addMouseListener(ScreenMouseListener(self.callbacks))
-        b = JButton("Add Domains To Scope", actionPerformed=self.addToScope)
+        b = JButton("Add Selected Domains To Scope", actionPerformed=self.addToScope)
         saveButton = JButton("Save results", actionPerformed=self.saveResults)
         topPane.add(image_label) 
         topPane.add(b)
@@ -226,9 +231,10 @@ class CTSearchTab(ITab):
         tableModel = self.domainTable.getModel()
         n = 0
         for d in domain_list:
-            row = [str(n),d,False]
+            row = [str(n),d,True]
             tableModel.addRow(row)
             n = n + 1
+
 class HelpLabel(JLabel):
     def __init__(self, callbacks):
         self.callbacks = callbacks
@@ -303,6 +309,12 @@ class ResourceTableModel(AbstractTableModel):
     def getValueAt(self, rowIndex, columnIndex):
         row_values = self.data[rowIndex]
         return row_values[columnIndex]
+
+    def setValueAt(self, value, rowIndex, columnIndex):
+        if columnIndex == 2:
+            row_values = self.data[rowIndex]
+            row_values[columnIndex] = value
+            self.fireTableCellUpdated(rowIndex, columnIndex)
 
     def hello_table_model(self):
         return "hello table model"
