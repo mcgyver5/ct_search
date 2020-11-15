@@ -2,6 +2,8 @@ from java.net import URL
 ##import requests
 import urllib2
 import os
+from java.lang import Boolean
+from java import io
 from burp import IBurpExtender
 from burp import ITab
 from java.io import PrintWriter
@@ -10,6 +12,7 @@ from burp import IContextMenuFactory
 from javax.swing.table import TableColumnModel
 from javax.swing.table import AbstractTableModel
 from javax.swing import JFileChooser
+from javax.swing import ImageIcon
 from javax.swing import JPanel
 from javax.swing import JScrollPane
 from javax.swing import JSplitPane
@@ -18,7 +21,10 @@ from javax.swing import JLabel
 from javax.swing import JButton
 from javax.swing import JTable
 from javax.swing import JMenuItem
+from javax.swing import JFileChooser
+from java.awt.event import MouseAdapter
 from java.util import ArrayList
+from javax import imageio
 import json
 
 class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
@@ -41,7 +47,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
         callbacks.issueAlert("Hello alerts")
 
         #create and populate a jtable:
-        initial_row = ['a','DOMAINS']
+        initial_row = ['a','DOMAINS',True]
         self.fileTable = JTable(ResourceTableModel())
         # set up the Tab:
 
@@ -132,7 +138,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
         try:
             path = os.getcwd()
             self._stdout.println("path is : " + path)
-
+            
             fhandle = open(f) 
             file_data = fhandle.read()
             domain_list = self.get_domains_from_file(file_data)
@@ -142,7 +148,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
             self._stdout.println(e)
         for dom in domain_list:
             num = num + 1
-            row = [dom,str(num)]
+            row = [str(num),dom,False]
             tableModel.addRow(row)
 
     def fileButtonClick(self,callbacks):
@@ -171,7 +177,18 @@ class CTSearchTab(ITab):
         self._stdout = PrintWriter(callbacks.getStdout(),True)
         self._stdout.println("What are we doing in the object down here")
     # Implement ITab:
-    
+    def saveResults(self, e):
+        self._stdout.println("Saving results") 
+        fileChooser = JFileChooser()
+        fileChooser.setDialogTitle("Specify the file name")
+        userSelection = fileChooser.showSaveDialog(self.getUiComponent())
+        if userSelection == JFileChooser.APPROVE_OPTION:
+            f = fileChooser.getSelectedFile()
+            fileout = open(f,'w')
+            for domain in self.domain_list:
+                self._stdout.println("writing ") 
+                fileout.write("I AM FILE")
+            fileout.close()
     def addToScope(self,whatever):
         self._stdout.println("add to scope called")
         self._stdout.println(whatever)
@@ -191,9 +208,14 @@ class CTSearchTab(ITab):
 
         splitpane = JSplitPane(JSplitPane.VERTICAL_SPLIT)
         topPane = JPanel()
-        
+        image_label = HelpLabel(self.callbacks)
+        image_label.setHelpIcon("nothing")
+        image_label.addMouseListener(ScreenMouseListener(self.callbacks))
         b = JButton("Add Domains To Scope", actionPerformed=self.addToScope)
-        topPane.add(b) 
+        saveButton = JButton("Save results", actionPerformed=self.saveResults)
+        topPane.add(image_label) 
+        topPane.add(b)
+        topPane.add(saveButton)
         scrollpane = JScrollPane(self.domainTable)
         splitpane.setTopComponent(topPane)
         splitpane.setBottomComponent(scrollpane)
@@ -204,13 +226,73 @@ class CTSearchTab(ITab):
         tableModel = self.domainTable.getModel()
         n = 0
         for d in domain_list:
-            row = [d,str(n)]
+            row = [str(n),d,False]
             tableModel.addRow(row)
             n = n + 1
+class HelpLabel(JLabel):
+    def __init__(self, callbacks):
+        self.callbacks = callbacks
+        self._stdout = PrintWriter(callbacks.getStdout(),True)
+        self._stdout.println("initating help label!")
+    ## HelpLabel is a JLabel with added help functionality
+    def setHelpText(self, helpText):
+        self.helpText = helpText
+    def setHelpType(self, helpType):
+        self.helpType = helpType
+
+    ## MAD!  set the icon here as well:
+
+    def setHelpIcon(self, helpIcon):
+        image_file_name = "C:/users/tmcguire/documents/ct_search/help.png"
+        # it can only be a local file so helpIcon is a text string pointing to a local file
+        self.setIcon(ImageIcon(image_file_name))
+        # add mouse stuff later:
+        # self.addMouseListener(ScreenMouseListener(self.callbacks))
+class HelpSystem():
+    def __init__(self, callbacks):
+        self.callbacks = callbacks
+        self._stdout = PrintWriter(callbacks.getStdout(),True)
+        self._stdout.println("initiate help system...")
+    
+    def setText(self, helpText):
+        self.helpText = helpText
+
+
+class ScreenMouseListener(MouseAdapter):
+        # constructor:
+    def __init__(self, callbacks):
+        self.callbacks = callbacks
+        self._stdout = PrintWriter(callbacks.getStdout(),True)
+        self._stdout.println("we are in this weird mouseListener, I think ")
+    def mousePressed(self, event):
+        self._stdout.println("Also, from mouse press")
+    
+    def mouseClicked(self, event):
+        pass
+
+    def mouseDragged(self, event):
+        pass
+
+    def mouseMoved(self,event):
+        pass
+
+    def mouseReleased(self, event):
+        pass
+
+    def mouseWheelMoved(self,event):
+        pass
+    
+    def mouseEntered(self, event):
+        pass
+
+    def mouseExited(self,event):
+        pass
+    
+    
 
 class ResourceTableModel(AbstractTableModel):
 
-    COLUMN_NAMES = ('num','domain')
+    COLUMN_NAMES = ('num','domain','selected')
 
     def __init__(self, *rows):
         self.data = list(rows)
@@ -219,8 +301,8 @@ class ResourceTableModel(AbstractTableModel):
         return len(self.data)
 
     def getValueAt(self, rowIndex, columnIndex):
-        row_values = self.data[rowIndex-1]
-        return row_values[columnIndex -1]
+        row_values = self.data[rowIndex]
+        return row_values[columnIndex]
 
     def hello_table_model(self):
         return "hello table model"
@@ -233,4 +315,13 @@ class ResourceTableModel(AbstractTableModel):
 
     def addRow(self, row=None):
         self.data.append(row)
-        self.fireTableRowsInserted(len(self.data) -1, len(self.data )-1)
+        self.fireTableRowsInserted(len(self.data) , len(self.data ))
+    
+    def isCellEditable(self, rowIndex, columnIndex):
+        return columnIndex == 2
+
+    def getColumnClass(self, columnIndex):
+        if columnIndex == 2:
+            return Boolean
+        else: 
+            return str
