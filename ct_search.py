@@ -1,13 +1,16 @@
 from java.net import URL
-##import requests
 import urllib2
 import os
+#import dns.resolver
+from java.net import InetAddress
+from java.net import UnknownHostException
 from java.lang import Boolean
 from java import io
 from burp import IBurpExtender
 from burp import ITab
 from java.io import PrintWriter
 from java.lang import RuntimeException
+from java.lang import Exception
 from burp import IContextMenuFactory
 from javax.swing.table import TableColumnModel
 from javax.swing.table import AbstractTableModel
@@ -27,6 +30,10 @@ from java.util import ArrayList
 from javax import imageio
 import json
 
+DOMAIN_COLUMN = 1
+CHECK_COLUMN = 3
+DNS_COLUMN = 2
+
 class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
 
     def	registerExtenderCallbacks(self, callbacks):
@@ -39,8 +46,6 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
         stdout = PrintWriter(callbacks.getStdout(), True)
 
         # write a message to our output stream
-        stdout.println("Hello World")
-        self._stdout.println("Also, from object, Hello World")
         self._callbacks = callbacks
 
         # write a message to the Burp alerts tab
@@ -81,7 +86,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
             except Exception as e:
                 print(e)
         my_domain_list.sort()
-        return my_domain_list 
+        return list(set(my_domain_list)) 
     
     def get_domains_from_api(self,domain):
         my_domain_list = []
@@ -136,14 +141,14 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
                 try:
                     domainList = str(cert.get('name_value')).strip()
                     for domain in domainList.split("\n"):
-                        self._stdout.println(domain)
                         if not domain in my_domain_list:
+                            domain = domain.replace("*.","")
                             my_domain_list.append(domain)
                 except Exception as e:
                     self._stdout.println(e)
             my_domain_list.sort()
 
-        return my_domain_list
+        return list(set(my_domain_list))
 
 #    def populateTableModel(self,f):
 #        domain_list = []
@@ -170,12 +175,10 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory):
         return self._splitpane
 
 class CTSearchTab(ITab):
-
     # constructor:
     def __init__(self, callbacks):
         self.callbacks = callbacks
         self._stdout = PrintWriter(callbacks.getStdout(),True)
-        self._stdout.println("What are we doing in the object down here")
 
     # Implement ITab:
     def saveResults(self, e):
@@ -195,12 +198,40 @@ class CTSearchTab(ITab):
         self._stdout.println("add to scope called")
         rowCount = self.domainTable.getRowCount()
         for row in range(0,rowCount):
-            if self.domainTable.getValueAt(row,2) == True:
-                domain = self.domainTable.getValueAt(row,1)
+            if self.domainTable.getValueAt(row,CHECK_COLUMN) == True:
+                domain = self.domainTable.getValueAt(row,DOMAIN_COLUMN)
                 domain = domain.replace("*.", "")
                 url1 = URL("https://{}/".format(domain))
                 if not self.callbacks.isInScope(url1):
                     self.callbacks.includeInScoe(url1)
+    def check_address(self, addrblobs):
+        for addrblob in addrblobs:
+            addr_arr = addrblob.split("|")
+            rrow = int(addr_arr[0])
+            addr = addr_arr[1]
+            try:
+                result = InetAddress.getByName(addr)
+                yield [rrow,"Success",result]
+            except UnknownHostException:
+                yield [rrow,"Fail",None]      
+
+    def resolveDns(self,event):
+        rowCount = self.domainTable.getRowCount()
+        dns_check_list = []
+        for row in range(0,rowCount):
+            if self.domainTable.getValueAt(row,CHECK_COLUMN) == True:
+                domain = self.domainTable.getValueAt(row,DOMAIN_COLUMN)
+                domain = domain.replace("*.","")
+                domain_string = str(row) + "|" + domain
+                dns_check_list.append(domain_string)
+
+        dns_results = self.check_address(dns_check_list)
+        for dns_result in dns_results:
+            saved_row = dns_result[0]
+            if dns_result[1] == "Success":
+                self.domainTable.setValueAt("Resolved",saved_row,DNS_COLUMN) 
+            else:
+                self.domainTable.setValueAt("No DNS Record",saved_row,DNS_COLUMN)
 
     def getTabCaption(self ):
         return "CT Search "
@@ -216,10 +247,13 @@ class CTSearchTab(ITab):
         image_label = HelpLabel(self.callbacks)
         image_label.setHelpIcon("nothing")
         image_label.addMouseListener(ScreenMouseListener(self.callbacks))
-        b = JButton("Add Selected Domains To Scope", actionPerformed=self.addToScope)
+        scope_button = JButton("Add Selected Domains To Scope", actionPerformed=self.addToScope)
+        dns_button = JButton("Resolve DNS", actionPerformed=self.resolveDns)
+#        search_text = JTextField("")
         saveButton = JButton("Save results", actionPerformed=self.saveResults)
         topPane.add(image_label) 
-        topPane.add(b)
+        topPane.add(scope_button)
+        topPane.add(dns_button)
         topPane.add(saveButton)
         scrollpane = JScrollPane(self.domainTable)
         splitpane.setTopComponent(topPane)
@@ -230,8 +264,9 @@ class CTSearchTab(ITab):
         self.domain_list = domain_list
         tableModel = self.domainTable.getModel()
         n = 0
+        dns_ans = "Not Checked"
         for d in domain_list:
-            row = [str(n),d,True]
+            row = [str(n),d,dns_ans,True]
             tableModel.addRow(row)
             n = n + 1
 
@@ -239,7 +274,6 @@ class HelpLabel(JLabel):
     def __init__(self, callbacks):
         self.callbacks = callbacks
         self._stdout = PrintWriter(callbacks.getStdout(),True)
-        self._stdout.println("initating help label!")
     ## HelpLabel is a JLabel with added help functionality
     def setHelpText(self, helpText):
         self.helpText = helpText
@@ -258,7 +292,6 @@ class HelpSystem():
     def __init__(self, callbacks):
         self.callbacks = callbacks
         self._stdout = PrintWriter(callbacks.getStdout(),True)
-        self._stdout.println("initiate help system...")
     
     def setText(self, helpText):
         self.helpText = helpText
@@ -298,7 +331,7 @@ class ScreenMouseListener(MouseAdapter):
 
 class ResourceTableModel(AbstractTableModel):
 
-    COLUMN_NAMES = ('num','domain','selected')
+    COLUMN_NAMES = ('num','domain','DNS Resolve','selected')
 
     def __init__(self, *rows):
         self.data = list(rows)
@@ -311,10 +344,14 @@ class ResourceTableModel(AbstractTableModel):
         return row_values[columnIndex]
 
     def setValueAt(self, value, rowIndex, columnIndex):
-        if columnIndex == 2:
+        if columnIndex == CHECK_COLUMN:
             row_values = self.data[rowIndex]
             row_values[columnIndex] = value
             self.fireTableCellUpdated(rowIndex, columnIndex)
+        if columnIndex == DNS_COLUMN:
+            row_values = self.data[rowIndex]
+            row_values[columnIndex] = value
+            self.fireTableCellUpdated(rowIndex,columnIndex)
 
     def hello_table_model(self):
         return "hello table model"
@@ -330,10 +367,10 @@ class ResourceTableModel(AbstractTableModel):
         self.fireTableRowsInserted(len(self.data) , len(self.data ))
     
     def isCellEditable(self, rowIndex, columnIndex):
-        return columnIndex == 2
+        return columnIndex == CHECK_COLUMN 
 
     def getColumnClass(self, columnIndex):
-        if columnIndex == 2:
+        if columnIndex == CHECK_COLUMN:
             return Boolean
         else: 
             return str
